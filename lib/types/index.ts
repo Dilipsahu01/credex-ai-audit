@@ -10,12 +10,19 @@ export type ToolName =
 
 export type UseCase = 'coding' | 'writing' | 'data' | 'research' | 'mixed'
 
+// What the user's org requires
+export interface ComplianceNeeds {
+  requiresZDR: boolean  // Zero Data Retention
+  requiresSSO: boolean  // Single Sign-On
+}
+
 // What the user fills in for each tool
 export interface ToolInput {
   tool: ToolName
   plan: string
   monthlySpend: number
   seats: number
+  compliance?: ComplianceNeeds  // ← added compliance gating
 }
 
 // What the form collects overall

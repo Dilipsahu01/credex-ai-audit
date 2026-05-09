@@ -4,6 +4,7 @@ import {
   ToolInput,
   ToolName,
   ToolRecommendation,
+  ComplianceNeeds,
 } from '@/lib/types'
 
 // ─── Constants ────────────────────────────────────────────────────
@@ -12,9 +13,40 @@ const OPTIMAL_THRESHOLD = 100
 
 // ─── Rule helpers ─────────────────────────────────────────────────
 function savings(current: number, recommended: number, seats: number = 1) {
-  // FIX 1: clamp to zero — savings can never be negative
   const monthly = Math.max(0, (current - recommended) * seats)
   return { monthlySavings: monthly, annualSavings: monthly * 12 }
+}
+
+// ─── Compliance capability map ────────────────────────────────────
+// Source: official plan feature pages, verified 2026-05-07
+const PLAN_CAPABILITIES: Record<string, { hasZDR: boolean; hasSSO: boolean }> = {
+  'cursor-pro':          { hasZDR: false, hasSSO: false },
+  'cursor-business':     { hasZDR: true,  hasSSO: true  },
+  'copilot-pro':         { hasZDR: false, hasSSO: false },
+  'copilot-business':    { hasZDR: true,  hasSSO: false },
+  'copilot-enterprise':  { hasZDR: true,  hasSSO: true  },
+  'claude-pro':          { hasZDR: false, hasSSO: false },
+  'claude-team':         { hasZDR: true,  hasSSO: true  },
+  'chatgpt-plus':        { hasZDR: false, hasSSO: false },
+  'chatgpt-team':        { hasZDR: true,  hasSSO: false },
+  'windsurf-pro':        { hasZDR: false, hasSSO: false },
+  'windsurf-teams':      { hasZDR: true,  hasSSO: true  },
+}
+
+function isDowngradeSafe(
+  targetPlanKey: string,
+  needs?: ComplianceNeeds
+): boolean {
+  // No compliance needs specified — any plan is safe
+  if (!needs || (!needs.requiresZDR && !needs.requiresSSO)) return true
+
+  const cap = PLAN_CAPABILITIES[targetPlanKey]
+  if (!cap) return false // unknown plan → default to safe (don't recommend)
+
+  if (needs.requiresZDR && !cap.hasZDR) return false
+  if (needs.requiresSSO && !cap.hasSSO) return false
+
+  return true
 }
 
 // ─── Per-tool audit rules ─────────────────────────────────────────
@@ -28,6 +60,18 @@ function auditCursor(t: ToolInput, teamSize: number, useCase: string): ToolRecom
 
   if (t.plan.includes('Business') && t.seats <= 25) {
     const s = savings(40, 20, t.seats)
+
+    // NEW: compliance gate
+    if (!isDowngradeSafe('cursor-pro', t.compliance)) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `Cursor Business is justified — your Zero Data Retention or SSO requirement means Pro ($20/user) is not a safe downgrade for your compliance needs.`,
+      }
+    }
+
     return {
       ...base, ...s,
       recommendedAction: 'downgrade',
@@ -61,6 +105,18 @@ function auditCopilot(t: ToolInput, teamSize: number, useCase: string): ToolReco
 
   if (t.plan.includes('Enterprise') && t.seats <= 30) {
     const s = savings(39, 19, t.seats)
+
+    // NEW: compliance gate
+    if (!isDowngradeSafe('copilot-business', t.compliance)) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `GitHub Copilot Enterprise is justified by your ZDR/SSO compliance requirements. The lower plan does not meet your security needs.`,
+      }
+    }
+
     return {
       ...base, ...s,
       recommendedAction: 'downgrade',
@@ -94,6 +150,18 @@ function auditClaude(t: ToolInput, teamSize: number, useCase: string): ToolRecom
 
   if (t.plan.includes('Team') && t.seats <= 5) {
     const s = savings(25, 20, t.seats)
+
+    // NEW: compliance gate
+    if (!isDowngradeSafe('claude-pro', t.compliance)) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `Claude Team is justified by your ZDR/SSO compliance requirements. The lower plan does not meet your security needs.`,
+      }
+    }
+
     return {
       ...base, ...s,
       recommendedAction: 'downgrade',
@@ -104,6 +172,18 @@ function auditClaude(t: ToolInput, teamSize: number, useCase: string): ToolRecom
 
   if (t.plan.includes('Max') && t.seats === 1) {
     const s = savings(100, 20, 1)
+
+    // NEW: compliance gate
+    if (!isDowngradeSafe('claude-pro', t.compliance)) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `Claude Max is justified by your ZDR/SSO compliance requirements. The lower plan does not meet your security needs.`,
+      }
+    }
+
     return {
       ...base, ...s,
       recommendedAction: 'downgrade',
@@ -172,6 +252,18 @@ function auditChatGPT(t: ToolInput, teamSize: number, useCase: string): ToolReco
 
   if (t.plan.includes('Team') && t.seats <= 2) {
     const s = savings(30, 20, t.seats)
+
+    // NEW: compliance gate
+    if (!isDowngradeSafe('chatgpt-plus', t.compliance)) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `ChatGPT Team is justified by your ZDR/SSO compliance requirements. The lower plan does not meet your security needs.`,
+      }
+    }
+
     return {
       ...base, ...s,
       recommendedAction: 'downgrade',
@@ -192,7 +284,6 @@ function auditChatGPT(t: ToolInput, teamSize: number, useCase: string): ToolReco
 function auditOpenAIApi(t: ToolInput, teamSize: number, useCase: string): ToolRecommendation {
   const base = { tool: 'openai-api' as ToolName, currentPlan: t.plan, currentMonthlySpend: t.monthlySpend }
 
-  // FIX 2: GPT-5.5 for non-complex tasks — GPT-5.4 is 50% cheaper
   if (t.plan.includes('5.5') && t.monthlySpend > 50) {
     return {
       ...base,
@@ -204,7 +295,6 @@ function auditOpenAIApi(t: ToolInput, teamSize: number, useCase: string): ToolRe
     }
   }
 
-  // Low spend — subscription is better value
   if (t.monthlySpend < 20) {
     return {
       ...base,
@@ -229,7 +319,6 @@ function auditOpenAIApi(t: ToolInput, teamSize: number, useCase: string): ToolRe
 function auditGemini(t: ToolInput, teamSize: number, useCase: string): ToolRecommendation {
   const base = { tool: 'gemini' as ToolName, currentPlan: t.plan, currentMonthlySpend: t.monthlySpend }
 
-  // FIX 3: Gemini Ultra is overkill for most use cases
   if (t.plan.includes('Ultra')) {
     const s = savings(41.67, 19.99, 1)
     return {
@@ -256,6 +345,18 @@ function auditWindsurf(t: ToolInput, teamSize: number, useCase: string): ToolRec
 
   if (t.plan.includes('Max')) {
     const s = savings(200, 20, 1)
+
+    // NEW: compliance gate
+    if (!isDowngradeSafe('windsurf-pro', t.compliance)) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `Windsurf Max is justified by your ZDR/SSO compliance requirements. The lower plan does not meet your security needs.`,
+      }
+    }
+
     return {
       ...base, ...s,
       recommendedAction: 'downgrade',
@@ -266,6 +367,18 @@ function auditWindsurf(t: ToolInput, teamSize: number, useCase: string): ToolRec
 
   if (t.plan.includes('Teams') && t.seats <= 2) {
     const s = savings(40, 20, t.seats)
+
+    // NEW: compliance gate
+    if (!isDowngradeSafe('windsurf-pro', t.compliance)) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `Windsurf Teams is justified by your ZDR/SSO compliance requirements. The lower plan does not meet your security needs.`,
+      }
+    }
+
     return {
       ...base, ...s,
       recommendedAction: 'downgrade',

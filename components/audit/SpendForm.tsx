@@ -72,7 +72,8 @@ export default function SpendForm({
     }
   }
 
-  const updateTool = (tool: ToolName, field: keyof ToolInput, value: string | number) => {
+  // UPDATED: Allow 'any' for the value to handle compliance objects
+  const updateTool = (tool: ToolName, field: keyof ToolInput, value: any) => {
     setFormData((prev) => ({
       ...prev,
       tools: prev.tools.map((t) =>
@@ -162,6 +163,43 @@ export default function SpendForm({
                   updateTool(toolInput.tool, 'seats', parseInt(e.target.value) || 1)
                 }
               />
+            </div>
+
+            {/* NEW: Compliance requirements checkboxes */}
+            <div className="space-y-2 col-span-full pt-2">
+              <label className="text-sm text-muted-foreground">
+                Compliance requirements (optional)
+              </label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={toolInput.compliance?.requiresZDR ?? false}
+                    onChange={(e) =>
+                      updateTool(toolInput.tool, 'compliance', {
+                        ...toolInput.compliance,
+                        requiresZDR: e.target.checked,
+                        requiresSSO: toolInput.compliance?.requiresSSO ?? false,
+                      })
+                    }
+                  />
+                  Zero Data Retention (ZDR)
+                </label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={toolInput.compliance?.requiresSSO ?? false}
+                    onChange={(e) =>
+                      updateTool(toolInput.tool, 'compliance', {
+                        ...toolInput.compliance,
+                        requiresZDR: toolInput.compliance?.requiresZDR ?? false,
+                        requiresSSO: e.target.checked,
+                      })
+                    }
+                  />
+                  SSO / SAML required
+                </label>
+              </div>
             </div>
           </CardContent>
         </Card>

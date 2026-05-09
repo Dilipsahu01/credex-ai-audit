@@ -53,8 +53,8 @@ describe('Audit Engine', () => {
   it('marks isHighSavings true when savings exceed $500/mo', () => {
     const form: AuditFormData = {
       tools: [
-	{ tool: 'cursor', plan: 'Business ($40/user/mo)', monthlySpend: 600, seats: 15 },
-	{ tool: 'github-copilot', plan: 'Enterprise ($39/user/mo)', monthlySpend: 585, seats: 15 },
+        { tool: 'cursor', plan: 'Business ($40/user/mo)', monthlySpend: 600, seats: 15 },
+        { tool: 'github-copilot', plan: 'Enterprise ($39/user/mo)', monthlySpend: 585, seats: 15 },
       ],
       teamSize: 10,
       useCase: 'coding',
@@ -82,5 +82,23 @@ describe('Audit Engine', () => {
     }
     const result = runAudit(form)
     expect(result.recommendations[0].recommendedAction).toBe('switch')
+  })
+
+  // NEW: Compliance gating test
+  it('does not recommend downgrade when ZDR is required', () => {
+    const form: AuditFormData = {
+      tools: [{
+        tool: 'cursor',
+        plan: 'Business ($40/user/mo)',
+        monthlySpend: 80,
+        seats: 2,
+        compliance: { requiresZDR: true, requiresSSO: false }
+      }],
+      teamSize: 2,
+      useCase: 'coding',
+    }
+    const result = runAudit(form)
+    expect(result.recommendations[0].recommendedAction).toBe('optimal')
+    expect(result.recommendations[0].monthlySavings).toBe(0)
   })
 })
