@@ -74,7 +74,7 @@ describe('Audit Engine', () => {
     expect(result.recommendations[0].monthlySavings).toBe(180)
   })
 
-  it('suggests Claude Pro over ChatGPT for writing use case', () => {
+  it('suggests switching ChatGPT to Cursor for coding use case', () => {
     const form: AuditFormData = {
       tools: [{ tool: 'chatgpt', plan: 'Plus ($20/mo)', monthlySpend: 20, seats: 1 }],
       teamSize: 1,
@@ -82,6 +82,7 @@ describe('Audit Engine', () => {
     }
     const result = runAudit(form)
     expect(result.recommendations[0].recommendedAction).toBe('switch')
+    expect(result.recommendations[0].recommendedTool).toBe('cursor')
   })
 
   // NEW: Compliance gating test

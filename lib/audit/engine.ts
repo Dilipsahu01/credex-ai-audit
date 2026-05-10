@@ -14,7 +14,7 @@ const OPTIMAL_THRESHOLD = 100
 // ─── Rule helpers ─────────────────────────────────────────────────
 
 /**
- * Bug Fix 2: Calculates savings based on actual spend per seat.
+ * Calculates savings based on actual spend per seat.
  * Falls back to official prices if actual spend is not applicable.
  */
 function savings(
@@ -29,7 +29,6 @@ function savings(
 }
 
 // ─── Compliance capability map ────────────────────────────────────
-// Source: official plan feature pages, verified 2026-05-07
 const PLAN_CAPABILITIES: Record<string, { hasZDR: boolean; hasSSO: boolean }> = {
   'cursor-pro':          { hasZDR: false, hasSSO: false },
   'cursor-business':     { hasZDR: true,  hasSSO: true  },
@@ -65,6 +64,16 @@ function auditCursor(t: ToolInput, teamSize: number, useCase: string): ToolRecom
   if (t.plan.includes('Business') && t.seats <= 25) {
     const s = savings(40, 20, t.seats, actualPerSeat)
 
+    if (s.monthlySavings === 0) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `Your effective spend per seat ($${actualPerSeat.toFixed(0)}/seat) already matches Pro pricing. No savings from downgrading.`,
+      }
+    }
+
     if (!isDowngradeSafe('cursor-pro', t.compliance)) {
       return {
         ...base,
@@ -83,9 +92,9 @@ function auditCursor(t: ToolInput, teamSize: number, useCase: string): ToolRecom
     }
   }
 
-  // Bug Fix 1: Added 'mixed' use case
   if ((useCase === 'writing' || useCase === 'research' || useCase === 'mixed') && !t.plan.includes('Hobby')) {
     const s = savings(t.monthlySpend, 20, 1)
+    // No zero-savings check for 'switch' actions
     return {
       ...base, ...s,
       recommendedAction: 'switch',
@@ -111,6 +120,16 @@ function auditCopilot(t: ToolInput, teamSize: number, useCase: string): ToolReco
   if (t.plan.includes('Enterprise') && t.seats <= 30) {
     const s = savings(39, 19, t.seats, actualPerSeat)
 
+    if (s.monthlySavings === 0) {
+      return {
+        ...base,
+        recommendedAction: 'optimal',
+        monthlySavings: 0,
+        annualSavings: 0,
+        reason: `Your effective spend already matches the Business plan price.`,
+      }
+    }
+
     if (!isDowngradeSafe('copilot-business', t.compliance)) {
       return {
         ...base,
@@ -129,7 +148,6 @@ function auditCopilot(t: ToolInput, teamSize: number, useCase: string): ToolReco
     }
   }
 
-  // Bug Fix 1: Added 'mixed' use case
   if (useCase === 'writing' || useCase === 'research' || useCase === 'mixed') {
     const s = savings(t.monthlySpend, 20, 1)
     return {
@@ -156,6 +174,9 @@ function auditClaude(t: ToolInput, teamSize: number, useCase: string): ToolRecom
 
   if (t.plan.includes('Team') && t.seats <= 5) {
     const s = savings(25, 20, t.seats, actualPerSeat)
+    if (s.monthlySavings === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `Your effective spend already matches Pro pricing.` }
+    }
     if (!isDowngradeSafe('claude-pro', t.compliance)) {
       return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `Claude Team is justified by your ZDR/SSO compliance requirements.` }
     }
@@ -164,6 +185,9 @@ function auditClaude(t: ToolInput, teamSize: number, useCase: string): ToolRecom
 
   if (t.plan.includes('Max') && t.seats === 1) {
     const s = savings(100, 20, 1, actualPerSeat)
+    if (s.monthlySavings === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `Your effective spend already matches Pro pricing.` }
+    }
     return { ...base, ...s, recommendedAction: 'downgrade', recommendedPlan: 'Pro ($20/mo)', reason: `Claude Pro covers 95% of professional workloads and saves $${s.monthlySavings}/mo.` }
   }
 
@@ -186,12 +210,16 @@ function auditAnthropicApi(t: ToolInput, teamSize: number, useCase: string): Too
   }
 
   if (t.plan.includes('Opus') && (useCase === 'writing' || useCase === 'coding')) {
+    const savingsAmount = Math.round(t.monthlySpend * 0.4)
+    if (savingsAmount === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: 'Your Anthropic API usage is cost-effective.' }
+    }
     return {
       ...base,
       recommendedAction: 'downgrade',
       recommendedPlan: 'Sonnet ($3/1M input vs Opus $5/1M input)',
-      monthlySavings: Math.round(t.monthlySpend * 0.4),
-      annualSavings: Math.round(t.monthlySpend * 0.4 * 12),
+      monthlySavings: savingsAmount,
+      annualSavings: savingsAmount * 12,
       reason: `Claude Opus is optimized for complex research. For ${useCase}, Sonnet delivers comparable quality at 40% lower cost.`,
     }
   }
@@ -203,13 +231,24 @@ function auditChatGPT(t: ToolInput, teamSize: number, useCase: string): ToolReco
   const base = { tool: 'chatgpt' as ToolName, currentPlan: t.plan, currentMonthlySpend: t.monthlySpend }
   const actualPerSeat = t.seats > 0 ? t.monthlySpend / t.seats : 30
 
-  if (useCase === 'coding') {
+  // Coding/Mixed Switch Rule - Priority #1
+  if (useCase === 'coding' || useCase === 'mixed') {
     const s = savings(t.monthlySpend, 20, 1)
-    return { ...base, ...s, recommendedAction: 'switch', recommendedTool: 'cursor', recommendedPlan: 'Cursor Pro ($20/mo)', reason: `For coding, Cursor Pro provides inline IDE completions and deep codebase context at the same price.` }
+    return {
+      ...base, ...s,
+      recommendedAction: 'switch',
+      recommendedTool: 'cursor',
+      recommendedPlan: 'Cursor Pro ($20/mo)',
+      reason: `ChatGPT is a general-purpose assistant. For coding, Cursor Pro ($20/mo) provides inline IDE completions and deep codebase context at the same price.`,
+    }
   }
 
+  // Downgrade Rule - Priority #2
   if (t.plan.includes('Team') && t.seats <= 2) {
     const s = savings(30, 20, t.seats, actualPerSeat)
+    if (s.monthlySavings === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `Your effective spend already matches Plus pricing.` }
+    }
     if (!isDowngradeSafe('chatgpt-plus', t.compliance)) {
       return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `ChatGPT Team is justified by compliance needs.` }
     }
@@ -223,12 +262,16 @@ function auditOpenAIApi(t: ToolInput, teamSize: number, useCase: string): ToolRe
   const base = { tool: 'openai-api' as ToolName, currentPlan: t.plan, currentMonthlySpend: t.monthlySpend }
 
   if (t.plan.includes('5.5') && t.monthlySpend > 50) {
+    const savingsAmount = Math.round(t.monthlySpend * 0.5)
+    if (savingsAmount === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: 'Your OpenAI API usage is cost-effective.' }
+    }
     return {
       ...base,
       recommendedAction: 'downgrade',
       recommendedPlan: 'GPT-5.4 ($2.50/1M input)',
-      monthlySavings: Math.round(t.monthlySpend * 0.5),
-      annualSavings: Math.round(t.monthlySpend * 0.5 * 12),
+      monthlySavings: savingsAmount,
+      annualSavings: savingsAmount * 12,
       reason: `GPT-5.5 is 100% more expensive than GPT-5.4 with marginal quality difference for most ${useCase} tasks. Switching saves approximately 50% of spend.`,
     }
   }
@@ -253,6 +296,9 @@ function auditGemini(t: ToolInput, teamSize: number, useCase: string): ToolRecom
 
   if (t.plan.includes('Ultra')) {
     const s = savings(41.67, 19.99, 1)
+    if (s.monthlySavings === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: 'Gemini Pro pricing is optimal.' }
+    }
     return {
       ...base,
       monthlySavings: parseFloat(s.monthlySavings.toFixed(2)),
@@ -272,26 +318,30 @@ function auditWindsurf(t: ToolInput, teamSize: number, useCase: string): ToolRec
 
   if (t.plan.includes('Max')) {
     const s = savings(200, 20, 1, actualPerSeat)
+    if (s.monthlySavings === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `Your effective spend already matches Pro pricing.` }
+    }
     return { ...base, ...s, recommendedAction: 'downgrade', recommendedPlan: 'Pro ($20/mo)', reason: `Windsurf Max is for extreme agentic usage. Pro covers standard AI coding assistance and saves $${s.monthlySavings}/mo.` }
   }
 
   if (t.plan.includes('Teams') && t.seats <= 2) {
     const s = savings(40, 20, t.seats, actualPerSeat)
+    if (s.monthlySavings === 0) {
+      return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `Your effective spend already matches Pro pricing.` }
+    }
     if (!isDowngradeSafe('windsurf-pro', t.compliance)) {
       return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: `Windsurf Teams is justified by compliance requirements.` }
     }
     return { ...base, ...s, recommendedAction: 'downgrade', recommendedPlan: `Pro ($20/mo per user)`, reason: `Individual Pro plans save $${s.monthlySavings}/mo with identical features.` }
   }
 
-  // Bug Fix 1: Added 'mixed' use case
   if (useCase === 'writing' || useCase === 'research' || useCase === 'mixed') {
+    const s = savings(t.monthlySpend, 20, 1)
     return {
-      ...base,
+      ...base, ...s,
       recommendedAction: 'switch',
       recommendedTool: 'claude',
       recommendedPlan: 'Claude Pro ($20/mo)',
-      monthlySavings: Math.max(0, t.monthlySpend - 20),
-      annualSavings: Math.max(0, (t.monthlySpend - 20) * 12),
       reason: `Windsurf is an AI-powered IDE. For ${useCase}, Claude Pro provides far better return as a reasoning tool.`,
     }
   }
@@ -299,10 +349,6 @@ function auditWindsurf(t: ToolInput, teamSize: number, useCase: string): ToolRec
   return { ...base, recommendedAction: 'optimal', monthlySavings: 0, annualSavings: 0, reason: 'Windsurf Pro is competitive pricing for AI coding.' }
 }
 
-// ─── Cross-tool duplicate detection ──────────────────────────────
-/**
- * Bug Fix 3: Detects overlapping subscriptions across different tools.
- */
 function detectDuplicates(
   formData: AuditFormData,
   recommendations: ToolRecommendation[]
@@ -350,8 +396,6 @@ function detectDuplicates(
   return recommendations
 }
 
-// ─── Main engine function ─────────────────────────────────────────
-
 const AUDIT_MAP: Record<
   ToolName,
   (t: ToolInput, teamSize: number, useCase: string) => ToolRecommendation
@@ -371,7 +415,6 @@ export function runAudit(formData: AuditFormData): AuditResult {
     AUDIT_MAP[tool.tool](tool, formData.teamSize, formData.useCase)
   )
 
-  // Bug Fix 3: Cross-tool duplicate detection
   recommendations = detectDuplicates(formData, recommendations)
 
   const totalMonthlySavings = recommendations.reduce(

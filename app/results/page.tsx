@@ -28,6 +28,10 @@ const ACTION_LABELS: Record<string, string> = {
 export default function ResultsPage() {
   const [result, setResult] = useState<AuditResult | null>(null)
   const [formData, setFormData] = useState<AuditFormData | null>(null)
+  
+  // Add summary state
+  const [summary, setSummary] = useState<string | null>(null)
+  const [summaryLoading, setSummaryLoading] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -38,7 +42,30 @@ export default function ResultsPage() {
     try {
       const parsed: AuditFormData = JSON.parse(saved)
       setFormData(parsed)
-      setResult(runAudit(parsed))
+      const auditResult = runAudit(parsed)
+      setResult(auditResult)
+
+      // Fetch AI summary after audit result is ready
+      setSummaryLoading(true)
+      fetch('/api/generate-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ result: auditResult, formData: parsed }),
+      })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.summary) {
+            setSummary(data.summary)
+          } else {
+            // Use fallback if API returns no summary
+            setSummary(getFallbackSummary(auditResult, parsed))
+          }
+        })
+        .catch(() => {
+          // Use fallback if API call fails entirely
+          setSummary(getFallbackSummary(auditResult, parsed))
+        })
+        .finally(() => setSummaryLoading(false))
     } catch (e) {
       window.location.href = '/'
     }
@@ -82,6 +109,27 @@ export default function ResultsPage() {
           </>
         )}
       </div>
+
+      {/* AI Summary section */}
+      {(summaryLoading || summary) && (
+        <Card className="border-dashed">
+          <CardContent className="pt-4">
+            {summaryLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <div className="h-3 w-3 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin" />
+                Generating your personalized summary...
+              </div>
+            ) : (
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">
+                  AI Summary
+                </p>
+                <p className="text-sm leading-relaxed">{summary}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Section 2 — Summary Card */}
       <Card>
@@ -207,4 +255,14 @@ function ToolRecommendationCard({ rec }: { rec: ToolRecommendation }) {
       </CardContent>
     </Card>
   )
+}
+
+function getFallbackSummary(result: AuditResult, formData: AuditFormData): string {
+  if (result.totalMonthlySavings === 0) {
+    return `Your ${formData.teamSize}-person team is already spending efficiently on AI tools. No significant optimizations were found for your ${formData.useCase} use case.`
+  }
+  const topSaving = result.recommendations
+    .filter(r => r.monthlySavings > 0)
+    .sort((a, b) => b.monthlySavings - a.monthlySavings)[0]
+  return `Your team could save $${result.totalMonthlySavings.toFixed(0)}/month ($${result.totalAnnualSavings.toFixed(0)}/year) by optimizing your AI tool spend. The biggest opportunity is ${TOOL_LABELS[topSaving.tool]}, where switching plans could save $${topSaving.monthlySavings.toFixed(0)}/month.`
 }
