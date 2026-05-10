@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { AlertCircle } from 'lucide-react'
+// Step 1: Added LeadCaptureModal import
+import LeadCaptureModal from '@/components/audit/LeadCaptureModal'
 
 const STORAGE_KEY = 'credex-audit-form'
 
@@ -29,9 +31,12 @@ export default function ResultsPage() {
   const [result, setResult] = useState<AuditResult | null>(null)
   const [formData, setFormData] = useState<AuditFormData | null>(null)
   
-  // Add summary state
+  // Existing AI summary states
   const [summary, setSummary] = useState<string | null>(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
+
+  // Step 2: Added Modal state
+  const [modalOpen, setModalOpen] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
@@ -57,12 +62,10 @@ export default function ResultsPage() {
           if (data.summary) {
             setSummary(data.summary)
           } else {
-            // Use fallback if API returns no summary
             setSummary(getFallbackSummary(auditResult, parsed))
           }
         })
         .catch(() => {
-          // Use fallback if API call fails entirely
           setSummary(getFallbackSummary(auditResult, parsed))
         })
         .finally(() => setSummaryLoading(false))
@@ -162,15 +165,18 @@ export default function ResultsPage() {
         ))}
       </div>
 
-      {/* Section 4 — CTA Block */}
+      {/* Step 3: Updated CTA Block to open modal */}
       {result.isHighSavings ? (
-        <Card className="border-blue-200 bg-blue-50/50 shadow-sm">
+        <Card className="border-blue-200 bg-blue-50/50">
           <CardContent className="pt-6 space-y-3">
             <p className="font-semibold text-blue-900">You could save over $500/month</p>
             <p className="text-sm text-blue-800 leading-relaxed">
               Credex negotiates discounted AI credits directly with providers. Teams at your spend level typically save 20–40% more on top of these plan optimizations.
             </p>
-            <Button className="w-full bg-blue-600 hover:bg-blue-700 text-white">
+            <Button
+              className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => setModalOpen(true)}
+            >
               Talk to Credex about deeper savings
             </Button>
           </CardContent>
@@ -182,9 +188,22 @@ export default function ResultsPage() {
             <p className="text-sm text-muted-foreground">
               AI tool pricing changes constantly. We'll alert you when a better option appears for your stack.
             </p>
-            <Button variant="outline" className="w-full">Notify me of changes</Button>
+            <Button variant="outline" className="w-full" onClick={() => setModalOpen(true)}>
+              Notify me of changes
+            </Button>
           </CardContent>
         </Card>
+      )}
+
+      {/* Step 4: Lead Capture Modal component */}
+      {formData && result && (
+        <LeadCaptureModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          formData={formData}
+          result={result}
+          isHighSavings={result.isHighSavings}
+        />
       )}
 
       {/* Section 5 — Footer link */}
@@ -203,7 +222,6 @@ export default function ResultsPage() {
 function ToolRecommendationCard({ rec }: { rec: ToolRecommendation }) {
   return (
     <Card className="overflow-hidden">
-      {/* Compliance Warning Strip */}
       {rec.complianceRisk === 'review-needed' && (
         <div className="bg-amber-50 border-b border-amber-100 px-4 py-2 flex items-center gap-2">
           <AlertCircle className="size-3.5 text-amber-600" />
