@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase'
 import { AuditResult, AuditFormData, TOOL_LABELS } from '@/lib/types'
 import { notFound } from 'next/navigation'
+import Link from 'next/link'
 
 interface Props {
   params: Promise<{ id: string }>
@@ -89,9 +90,12 @@ export default async function AuditPage({ params }: Props) {
         <p className="text-sm text-muted-foreground">
           Find out how much your team is overspending on AI tools. Free, takes 2 minutes.
         </p>
-        <a href="/" className="inline-block bg-black text-white px-6 py-2.5 rounded-lg text-sm font-medium">
+        <Link
+          href="/"
+          className="inline-block bg-black text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-neutral-800 transition-colors"
+        >
           Run my free audit
-        </a>
+        </Link>
       </div>
 
       <p className="text-center text-xs text-muted-foreground">

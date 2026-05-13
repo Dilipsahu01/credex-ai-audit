@@ -32,6 +32,9 @@ export interface AuditFormData {
   useCase: UseCase
 }
 
+/** When set, UI surfaces compliance gating (e.g. ZDR/SSO blocks a risky downgrade). */
+export type ComplianceRiskLevel = 'none' | 'review-needed'
+
 // What the audit engine returns for each tool
 export interface ToolRecommendation {
   tool: ToolName
@@ -43,6 +46,8 @@ export interface ToolRecommendation {
   monthlySavings: number
   annualSavings: number
   reason: string
+  complianceRisk?: ComplianceRiskLevel
+  complianceNote?: string
 }
 
 // Full audit result

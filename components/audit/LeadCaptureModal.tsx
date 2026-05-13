@@ -56,7 +56,7 @@ export default function LeadCaptureModal({
 
       window.location.href = `/audit/${data.auditId}`
 
-    } catch (e) {
+    } catch {
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)

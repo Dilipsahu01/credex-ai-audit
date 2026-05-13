@@ -169,6 +169,8 @@ function auditCopilot(t: ToolInput, teamSize: number, useCase: string): ToolReco
 }
 
 function auditClaude(t: ToolInput, teamSize: number, useCase: string): ToolRecommendation {
+  void teamSize
+  void useCase
   const base = { tool: 'claude' as ToolName, currentPlan: t.plan, currentMonthlySpend: t.monthlySpend }
   const actualPerSeat = t.seats > 0 ? t.monthlySpend / t.seats : (t.plan.includes('Team') ? 25 : 100)
 

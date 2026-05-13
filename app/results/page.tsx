@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { runAudit } from '@/lib/audit/engine'
 import { AuditFormData, AuditResult, ToolRecommendation, TOOL_LABELS } from '@/lib/types'
@@ -46,38 +47,43 @@ export default function ResultsPage() {
     }
     try {
       const parsed: AuditFormData = JSON.parse(saved)
-      setFormData(parsed)
       const auditResult = runAudit(parsed)
-      setResult(auditResult)
+      queueMicrotask(() => {
+        setFormData(parsed)
+        setResult(auditResult)
 
-      // Fetch AI summary after audit result is ready
-      setSummaryLoading(true)
-      fetch('/api/generate-summary', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ result: auditResult, formData: parsed }),
-      })
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.summary) {
-            setSummary(data.summary)
-          } else {
+        setSummaryLoading(true)
+        fetch('/api/generate-summary', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ result: auditResult, formData: parsed }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.summary) {
+              setSummary(data.summary)
+            } else {
+              setSummary(getFallbackSummary(auditResult, parsed))
+            }
+          })
+          .catch(() => {
             setSummary(getFallbackSummary(auditResult, parsed))
-          }
-        })
-        .catch(() => {
-          setSummary(getFallbackSummary(auditResult, parsed))
-        })
-        .finally(() => setSummaryLoading(false))
-    } catch (e) {
+          })
+          .finally(() => setSummaryLoading(false))
+      })
+    } catch {
       window.location.href = '/'
     }
   }, [])
 
   if (!result || !formData) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-muted-foreground">
-        Running your audit...
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4 text-muted-foreground">
+        <div
+          className="h-8 w-8 rounded-full border-2 border-muted-foreground/30 border-t-foreground/60 animate-spin"
+          aria-hidden
+        />
+        <p className="text-sm font-medium">Running your audit…</p>
       </div>
     )
   }
@@ -98,7 +104,7 @@ export default function ResultsPage() {
         {result.isOptimal ? (
           <>
             <h1 className="text-3xl font-semibold">Your stack looks optimal 👍</h1>
-            <p className="text-muted-foreground">You're spending well. No significant savings found.</p>
+            <p className="text-muted-foreground">You&apos;re spending well. No significant savings found.</p>
           </>
         ) : (
           <>
@@ -107,7 +113,8 @@ export default function ResultsPage() {
               <span className="text-muted-foreground text-2xl font-normal">/mo potential savings</span>
             </h1>
             <p className="text-muted-foreground">
-              That's <span className="text-foreground font-medium">${result.totalAnnualSavings.toFixed(0)}/year</span> back in your budget
+              That&apos;s{' '}
+              <span className="text-foreground font-medium">${result.totalAnnualSavings.toFixed(0)}/year</span> back in your budget
             </p>
           </>
         )}
@@ -186,7 +193,7 @@ export default function ResultsPage() {
           <CardContent className="pt-6 space-y-3">
             <p className="font-medium">Want to be notified of better deals?</p>
             <p className="text-sm text-muted-foreground">
-              AI tool pricing changes constantly. We'll alert you when a better option appears for your stack.
+              AI tool pricing changes constantly. We&apos;ll alert you when a better option appears for your stack.
             </p>
             <Button variant="outline" className="w-full" onClick={() => setModalOpen(true)}>
               Notify me of changes
@@ -208,12 +215,12 @@ export default function ResultsPage() {
 
       {/* Section 5 — Footer link */}
       <div className="text-center pt-4">
-        <button
-          onClick={() => window.location.href = '/'}
+        <Link
+          href="/"
           className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
         >
           ← Run a new audit
-        </button>
+        </Link>
       </div>
     </div>
   )

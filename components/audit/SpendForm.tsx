@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -35,21 +35,29 @@ export default function SpendForm({
 }) {
   const [formData, setFormData] = useState<AuditFormData>(defaultFormData)
   const [selectedTools, setSelectedTools] = useState<ToolName[]>([])
+  const skipFirstPersist = useRef(true)
 
-  // Load persisted form state on mount
+  // Load persisted form state on mount (defer setState to avoid sync setState-in-effect lint)
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved) as AuditFormData
+    if (!saved) return
+    try {
+      const parsed = JSON.parse(saved) as AuditFormData
+      queueMicrotask(() => {
         setFormData(parsed)
         setSelectedTools(parsed.tools.map((t) => t.tool))
-      } catch {}
+      })
+    } catch {
+      /* ignore corrupt storage */
     }
   }, [])
 
-  // Persist form state on every change
+  // Persist on changes, but not on the initial mount (avoids overwriting storage before hydrate)
   useEffect(() => {
+    if (skipFirstPersist.current) {
+      skipFirstPersist.current = false
+      return
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(formData))
   }, [formData])
 
@@ -72,8 +80,7 @@ export default function SpendForm({
     }
   }
 
-  // UPDATED: Allow 'any' for the value to handle compliance objects
-  const updateTool = (tool: ToolName, field: keyof ToolInput, value: any) => {
+  const updateTool = <K extends keyof ToolInput>(tool: ToolName, field: K, value: ToolInput[K]) => {
     setFormData((prev) => ({
       ...prev,
       tools: prev.tools.map((t) =>
@@ -88,13 +95,10 @@ export default function SpendForm({
   }
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6 p-4">
-      <div>
-        <h1 className="text-2xl font-semibold mb-1">AI Spend Audit</h1>
-        <p className="text-muted-foreground text-sm">
-          Select the AI tools you pay for and we'll find where you're overspending.
-        </p>
-      </div>
+    <div className="max-w-2xl mx-auto space-y-6 px-4">
+      <p className="text-sm text-muted-foreground text-center sm:text-left">
+        Select everything you pay for today—we&apos;ll score overlaps and plan mismatches.
+      </p>
 
       {/* Tool selector */}
       <Card>
