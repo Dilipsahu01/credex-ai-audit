@@ -50,6 +50,7 @@ Chronological work mapped to a seven-day sprint. Git subjects in the closing tab
 
 | Date | Subject |
 |------|---------|
+| 2026-05-14 | deploy: current update of deployment on 14th may 11:57 (5th commit) |
 | 2026-05-10 | feat: implement lead capture modal and audit persistence with email notifications |
 | 2026-05-10 | ci: add GitHub Actions workflow for lint, typecheck and tests |
 | 2026-05-10 | fix: correct test name and ensure ChatGPT coding rule fires first |
