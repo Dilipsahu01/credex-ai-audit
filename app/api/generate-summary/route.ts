@@ -1,12 +1,27 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest, NextResponse } from 'next/server'
 import { AuditResult, AuditFormData, TOOL_LABELS } from '@/lib/types'
+import { Ratelimit } from "@upstash/ratelimit"
+import { kv } from "@vercel/kv"
+
+const claudeLimit = new Ratelimit({
+  redis: kv,
+  limiter: Ratelimit.slidingWindow(5, "10 m"),
+});
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 })
 
 export async function POST(req: NextRequest) {
+  if (process.env.KV_REST_API_URL) {
+    const ip = req.headers.get("x-forwarded-for") ?? "127.0.0.1";
+    const { success } = await claudeLimit.limit(`claude_${ip}`);
+    if (!success) {
+      return NextResponse.json({ summary: null, error: "Rate limit exceeded" }, { status: 429 });
+    }
+  }
+
   try {
     const { result, formData }: { result: AuditResult; formData: AuditFormData } = await req.json()
 

@@ -15,10 +15,10 @@ The user selects paid tools from a fixed catalog of eight (`ToolName` in `lib/ty
 `SpendForm` serializes `AuditFormData` to `credex-audit-form` on change (after an initial-load guard so the default empty state does not overwrite a saved session). `/results` reads the same key, runs `runAudit(formData)` client-side, and redirects home if the payload is missing.
 
 **3. Next.js API — `POST /api/generate-summary`**  
-The results page POSTs `{ result, formData }`. The handler builds a **structured bullet list** of per-tool outcomes (`optimal` / `downgrade` / `switch` / review) and sends one user message to **Anthropic Messages** (`claude-haiku-4-5-20251001`, `max_tokens: 150`). On failure it returns HTTP 200 with `summary: null` so the UI never hard-fails.
+The results page POSTs `{ result, formData }`. The handler enforces **Upstash rate limits**, builds a **structured bullet list** of per-tool outcomes (`optimal` / `downgrade` / `switch` / review) and sends one user message to **Anthropic Messages** (`claude-haiku-4-5-20251001`, `max_tokens: 150`). On failure it returns HTTP 200 with `summary: null` so the UI never hard-fails.
 
 **4. Next.js API — `POST /api/save-audit`**  
-After lead capture, the client POSTs form + result + email metadata. The handler validates email, checks `EMAIL_APP_PASSWORD`, inserts into **`audits`** (nanoid `id`, JSON columns, denormalized savings, `is_public: true`) and **`leads`**, then `sendMail` with `NEXT_PUBLIC_APP_URL/audit/{id}`.
+After lead capture, the client POSTs form + result + email metadata. The handler enforces global and per-IP **Upstash rate limits**, validates email, checks `EMAIL_APP_PASSWORD`, inserts into **`audits`** and **`leads`**, then uses `sendMail` with a sanitized HTML template to prevent injection attacks.
 
 **5. Supabase**  
 Postgres tables back public read for `/audit/[id]` via `supabaseAdmin` on the server. The anon client exists for future client reads; writes are service-role only from API routes.
@@ -46,7 +46,7 @@ At that volume the **current synchronous save path** (insert + send mail in one 
 
 - **Queue Anthropic calls** for summaries: cap concurrency, dedupe by hash of `(formData, result)`, and **Redis cache** keyed by that hash so retries and re-opens do not re-bill the API.
 
-- **Rate limit** `save-audit` and `generate-summary` per IP / per email with Redis or Upstash to prevent abuse.
+- **Rate limit**: Implemented Vercel KV and Upstash Ratelimit for both per-IP and global rate limiting on `save-audit` and `generate-summary` API routes to prevent API token drain and abuse.
 
 **Supabase / Postgres**
 

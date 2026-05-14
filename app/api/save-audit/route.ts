@@ -3,6 +3,18 @@ import nodemailer from 'nodemailer'
 import { supabaseAdmin } from '@/lib/supabase'
 import { nanoid } from 'nanoid'
 import { AuditFormData, AuditResult, TOOL_LABELS } from '@/lib/types'
+import { Ratelimit } from "@upstash/ratelimit"
+import { kv } from "@vercel/kv"
+
+const ipLimit = new Ratelimit({
+  redis: kv,
+  limiter: Ratelimit.slidingWindow(3, "15 m"),
+});
+
+const globalLimit = new Ratelimit({
+  redis: kv,
+  limiter: Ratelimit.slidingWindow(20, "1 m"),
+});
 
 const GMAIL_USER = 'dilipsahuop@gmail.com'
 
@@ -15,19 +27,26 @@ const transporter = nodemailer.createTransport({
 })
 
 export async function POST(req: NextRequest) {
+  if (process.env.KV_REST_API_URL) {
+    const ip = req.headers.get("x-forwarded-for") ?? "127.0.0.1";
+    const { success: ipSuccess } = await ipLimit.limit(`ip_${ip}`);
+    const { success: globalSuccess } = await globalLimit.limit("global_email_limit");
+    if (!ipSuccess || !globalSuccess) {
+      return NextResponse.json({ error: "Rate limit exceeded" }, { status: 429 });
+    }
+  }
+
   try {
     const {
       formData,
       result,
       email,
-      companyEmail, // Capture from modal
       companyName,
       role,
     }: {
       formData: AuditFormData
       result: AuditResult
       email: string
-      companyEmail?: string
       companyName?: string
       role?: string
     } = await req.json()
@@ -88,9 +107,6 @@ export async function POST(req: NextRequest) {
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; padding: 24px;">
           <h2>AI Spend Audit Results</h2>
           <p><strong>Submitted by:</strong> ${email}</p>
-          <p><strong>Company email (if provided):</strong> ${companyEmail || 'None'}</p>
-          ${companyName ? `<p><strong>Company:</strong> ${companyName}</p>` : ''}
-          ${role ? `<p><strong>Role:</strong> ${role}</p>` : ''}
 
           <div style="background: #f9f9f9; padding: 20px; border-radius: 8px;">
             <p>Total monthly savings: <strong>$${result.totalMonthlySavings.toFixed(0)}/mo</strong></p>
